@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Build images, load them into the kind cluster and install everything with Helm.
-# Run from the repo root after:  kind create cluster --name athena --config k8s/kind-config.yaml
+# Run from the repo root after:  kind create cluster --name athena --config k8s/kind-config.local.yaml
 set -euo pipefail
 
-: "${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY first (export ANTHROPIC_API_KEY=...)}"
+# Optional: without a key, ai-service uses its rule-based fallback.
+: "${ANTHROPIC_API_KEY:=}"
+if [ -z "$ANTHROPIC_API_KEY" ]; then
+  echo "ANTHROPIC_API_KEY not set: explanations will use the rule-based fallback."
+fi
 DB_PASSWORD="${DB_PASSWORD:-athena-dev-password}"
 
 for svc in api model_server ai_service monitor web; do

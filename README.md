@@ -66,9 +66,11 @@ Without an API key everything still runs; explanations fall back to simple rule-
 Requirements: Docker, [kind](https://kind.sigs.k8s.io/), kubectl, Helm. 16 GB RAM recommended.
 
 ```bash
-# edit hostPath in k8s/kind-config.yaml to the absolute path of ml/artifacts first
-kind create cluster --name athena --config k8s/kind-config.yaml
-export ANTHROPIC_API_KEY=sk-ant-...
+# copy the template, then set hostPath to the absolute path of ml/artifacts on your machine
+# (kind-config.local.yaml is gitignored, so your path is never committed; quote it if it has spaces)
+cp k8s/kind-config.yaml k8s/kind-config.local.yaml
+kind create cluster --name athena --config k8s/kind-config.local.yaml
+export ANTHROPIC_API_KEY=sk-ant-...      # optional: without it, explanations use rule-based text
 ./scripts/k8s-up.sh
 kubectl port-forward svc/web 8080:8080
 ```
