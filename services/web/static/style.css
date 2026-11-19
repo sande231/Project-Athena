@@ -1,0 +1,30 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: #f6f7f9; color: #1d2433; }
+nav { display: flex; gap: 20px; align-items: center; padding: 14px 28px; background: #1f2a44; }
+nav strong { color: #fff; margin-right: 16px; }
+nav a { color: #c9d3ea; text-decoration: none; font-size: 14px; }
+nav a.active { color: #fff; font-weight: 600; }
+main { max-width: 1100px; margin: 0 auto; padding: 28px; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+.sub { color: #5b6478; margin: 0 0 24px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.stat { background: #fff; border: 1px solid #e3e6ec; border-radius: 10px; padding: 16px; }
+.stat b { display: block; font-size: 26px; }
+.stat span { color: #5b6478; font-size: 13px; }
+.columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.col { background: #fff; border: 1px solid #e3e6ec; border-radius: 10px; padding: 14px; min-height: 200px; }
+.col h2 { font-size: 15px; margin: 0 0 10px; }
+.order { border-top: 1px solid #eef0f4; padding: 10px 0; font-size: 14px; }
+.order .reason { color: #5b6478; font-size: 13px; margin-top: 4px; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.approve { background: #e5f4e4; color: #1d6b2a; }
+.review { background: #f9eeda; color: #8a5a00; }
+.block { background: #fbebeb; color: #a12a2a; }
+button { background: #1f2a44; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+button.ghost { background: #fff; color: #1f2a44; border: 1px solid #c9d0dd; }
+.card { background: #fff; border: 1px solid #e3e6ec; border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+label { display: block; font-size: 13px; color: #5b6478; margin: 10px 0 4px; }
+input, select { width: 100%; padding: 8px; border: 1px solid #c9d0dd; border-radius: 8px; }
+.alert { border-left: 4px solid #d9822b; padding-left: 12px; margin: 12px 0; }
+.alert.critical { border-color: #c0392b; }
+@media (max-width: 800px) { .stats, .columns { grid-template-columns: 1fr 1fr; } }

@@ -1,0 +1,81 @@
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {app: {{ $name }}, part-of: athena}
+spec:
+  replicas: {{ $svc.replicas | default 1 }}
+  selector:
+    matchLabels: {app: {{ $name }}}
+  template:
+    metadata:
+      labels: {app: {{ $name }}, part-of: athena}
+    spec:
+      serviceAccountName: athena
+      containers:
+        - name: {{ $name }}
+          image: "{{ $.Values.imageRegistry }}{{ $svc.image }}:{{ $.Values.imageTag }}"
+          imagePullPolicy: {{ $.Values.imagePullPolicy }}
+          {{- if $svc.port }}
+          ports: [{containerPort: {{ $svc.port }}, name: http}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- end }}
+          env:
+            {{- range $k, $v := $svc.env }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+            {{- if $svc.usesDatabase }}
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: athena-secrets, key: DB_PASSWORD}}
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://{{ $.Values.postgres.user }}:$(DB_PASSWORD)@postgres:5432/{{ $.Values.postgres.database }}"
+            {{- end }}
+            {{- if $svc.usesAnthropic }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom: {secretKeyRef: {name: athena-secrets, key: ANTHROPIC_API_KEY}}
+            {{- end }}
+          {{- with $svc.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $svc.mountArtifacts }}
+          volumeMounts: [{name: artifacts, mountPath: /artifacts, readOnly: true}]
+          {{- end }}
+      {{- if $svc.mountArtifacts }}
+      volumes:
+        - name: artifacts
+          hostPath: {path: {{ $.Values.artifactsHostPath }}, type: Directory}
+      {{- end }}
+{{- if $svc.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {app: {{ $name }}, part-of: athena}
+spec:
+  selector: {app: {{ $name }}}
+  ports: [{name: http, port: {{ $svc.port }}, targetPort: http}]
+{{- end }}
+{{- if $svc.autoscale }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ $name }}}
+  minReplicas: {{ $svc.autoscale.min }}
+  maxReplicas: {{ $svc.autoscale.max }}
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: {{ $svc.autoscale.cpuPercent }}}}
+{{- end }}
+{{- end }}

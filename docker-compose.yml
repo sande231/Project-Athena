@@ -1,0 +1,59 @@
+# Local development: runs the whole system without Kubernetes.
+#   cp .env.example .env      (add your ANTHROPIC_API_KEY)
+#   docker compose up --build
+# Then open http://localhost:8080
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: athena
+      POSTGRES_PASSWORD: athena
+      POSTGRES_DB: athena
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U athena"]
+      interval: 5s
+      retries: 10
+
+  model-server:
+    build: {context: ., dockerfile: services/model_server/Dockerfile}
+    environment:
+      MODEL_PATH: /artifacts/model.joblib
+    volumes: [./ml/artifacts:/artifacts:ro]
+    ports: ["8001:8001"]
+
+  ai-service:
+    build: {context: ., dockerfile: services/ai_service/Dockerfile}
+    env_file: [.env]
+    ports: ["8002:8002"]
+
+  api:
+    build: {context: ., dockerfile: services/api/Dockerfile}
+    environment:
+      DATABASE_URL: postgresql+psycopg2://athena:athena@postgres:5432/athena
+      MODEL_URL: http://model-server:8001
+      AI_URL: http://ai-service:8002
+    depends_on:
+      postgres: {condition: service_healthy}
+    ports: ["8000:8000"]
+
+  monitor:
+    build: {context: ., dockerfile: services/monitor/Dockerfile}
+    environment:
+      API_URL: http://api:8000
+      AI_URL: http://ai-service:8002
+      REFERENCE_PATH: /artifacts/reference_stats.json
+      CHECK_INTERVAL: "30"
+    volumes: [./ml/artifacts:/artifacts:ro]
+    depends_on: [api]
+
+  web:
+    build: {context: ., dockerfile: services/web/Dockerfile}
+    environment:
+      API_URL: http://api:8000
+    depends_on: [api]
+    ports: ["8080:8080"]
+
+volumes:
+  pgdata:

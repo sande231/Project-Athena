@@ -1,0 +1,24 @@
+# ServiceAccount used by all Athena pods. It gets no extra Kubernetes permissions by default
+# (least privilege). Add a Role here only when a service must call the Kubernetes API
+# (for example, api creating a retraining Job).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: athena
+automountServiceAccountToken: false
+{{- if .Values.serviceMonitor.enabled }}
+---
+# Tells Prometheus (kube-prometheus-stack) to scrape /metrics on every Athena service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: athena
+  labels: {release: {{ .Values.serviceMonitor.releaseLabel }}}
+spec:
+  selector:
+    matchLabels: {part-of: athena}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+{{- end }}

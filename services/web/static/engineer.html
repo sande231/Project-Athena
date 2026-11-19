@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena · Engineer dashboard</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+<nav><strong>Athena</strong><a href="owner.html">Owner View</a><a class="active" href="engineer.html">Engineer</a><a href="store.html">Demo store</a></nav>
+<main>
+  <h1>Model health</h1>
+  <p class="sub">Live metrics from athena-api. Full system metrics are in Grafana.</p>
+  <div class="stats">
+    <div class="stat"><b id="m-flag">–</b><span>Flag rate (review + block)</span></div>
+    <div class="stat"><b id="m-lat">–</b><span>Avg latency (ms)</span></div>
+    <div class="stat"><b id="m-prec">–</b><span>Precision (labeled orders)</span></div>
+    <div class="stat"><b id="m-rec">–</b><span>Recall (labeled orders)</span></div>
+  </div>
+  <div class="card"><div id="chart" style="height:280px"></div></div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="font-size:16px;margin:0">Alerts</h2>
+      <button onclick="retrain()">Retrain model</button>
+    </div>
+    <div id="alerts"><p class="sub">No alerts.</p></div>
+  </div>
+</main>
+<script>
+const history = {t: [], flag: []};
+const pct = v => v == null ? "–" : (v * 100).toFixed(1) + "%";
+
+async function retrain() {
+  const r = await fetch("/api/retrain", {method: "POST"}).then(r => r.json());
+  alert("Retrain: " + r.status);
+}
+
+async function load() {
+  const [s, alerts] = await Promise.all([
+    fetch("/api/metrics/summary").then(r => r.json()),
+    fetch("/api/alerts").then(r => r.json())]);
+  document.getElementById("m-flag").textContent = pct(s.flag_rate);
+  document.getElementById("m-lat").textContent = s.avg_latency_ms;
+  document.getElementById("m-prec").textContent = pct(s.precision);
+  document.getElementById("m-rec").textContent = pct(s.recall);
+
+  history.t.push(new Date()); history.flag.push(s.flag_rate * 100);
+  Plotly.react("chart", [{x: history.t, y: history.flag, mode: "lines", name: "Flag rate %"}],
+    {margin: {t: 30, l: 40, r: 10, b: 30}, title: {text: "Flag rate over time (%)", font: {size: 14}}});
+
+  if (alerts.length) {
+    document.getElementById("alerts").innerHTML = alerts.map(a => `
+      <div class="alert ${a.severity}">
+        <b>${a.type} · ${a.severity}</b> <span class="sub">${new Date(a.created_at).toLocaleTimeString()}</span>
+        <div>${a.explanation.summary || ""}</div>
+        <div class="sub">Likely cause: ${a.explanation.likely_cause || "–"}</div>
+        <div class="sub">Action: ${a.explanation.action || "–"}</div>
+      </div>`).join("");
+  }
+}
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>

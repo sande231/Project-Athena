@@ -1,0 +1,58 @@
+# Default values for the Athena chart (local kind cluster).
+imageRegistry: ""          # e.g. ghcr.io/<owner>/ when pulling from GitHub Container Registry
+imageTag: local
+imagePullPolicy: IfNotPresent
+
+# Folder on the kind node that holds model.joblib and reference_stats.json
+# (mounted from ./ml/artifacts by k8s/kind-config.yaml)
+artifactsHostPath: /athena-artifacts
+
+serviceMonitor:
+  enabled: true            # needs kube-prometheus-stack installed
+  releaseLabel: monitoring # must match the kube-prometheus-stack release name
+
+postgres:
+  user: athena
+  database: athena
+  storage: 1Gi
+
+services:
+  api:
+    image: athena-api
+    port: 8000
+    replicas: 1
+    env:
+      MODEL_URL: http://model-server:8001
+      AI_URL: http://ai-service:8002
+    usesDatabase: true
+  model-server:
+    image: athena-model-server
+    port: 8001
+    replicas: 2
+    env:
+      MODEL_PATH: /artifacts/model.joblib
+    mountArtifacts: true
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    autoscale: {min: 2, max: 6, cpuPercent: 70}
+  ai-service:
+    image: athena-ai-service
+    port: 8002
+    replicas: 1
+    usesAnthropic: true
+  web:
+    image: athena-web
+    port: 8080
+    replicas: 1
+    env:
+      API_URL: http://api:8000
+  monitor:
+    image: athena-monitor
+    replicas: 1
+    env:
+      API_URL: http://api:8000
+      AI_URL: http://ai-service:8002
+      REFERENCE_PATH: /artifacts/reference_stats.json
+      CHECK_INTERVAL: "30"
+    mountArtifacts: true
