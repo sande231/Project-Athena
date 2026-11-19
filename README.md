@@ -81,9 +81,12 @@ Useful demo commands:
 
 ```bash
 kubectl get pods -w                              # watch pods
-kubectl delete pod -l app=model-server --wait=false   # Kubernetes restarts it
+# delete ONE model-server pod; Kubernetes replaces it and orders keep flowing
+kubectl delete "$(kubectl get pods -l app=model-server -o name | head -1)" --wait=false
 kubectl get hpa model-server -w                  # autoscaling under load
 ```
+
+Full step-by-step demo (load test, autoscaling, pod kill): [docs/demo-runbook.md](docs/demo-runbook.md).
 
 ## Run the tests
 
