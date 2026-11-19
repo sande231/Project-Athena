@@ -35,7 +35,11 @@ services:
     resources:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: 500m, memory: 512Mi}
-    autoscale: {min: 2, max: 6, cpuPercent: 70}
+    # Seconds to keep serving after a pod is told to stop, so no requests fail on deletion.
+    preStopSleep: 5
+    # scaleDownSeconds: 60 is a demo setting so pods scale back down within ~1-2 minutes.
+    # Production would keep the Kubernetes default (300) to avoid flapping on bursty traffic.
+    autoscale: {min: 2, max: 6, cpuPercent: 70, scaleDownSeconds: 60}
   ai-service:
     image: athena-ai-service
     port: 8002
