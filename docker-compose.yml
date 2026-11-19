@@ -1,7 +1,10 @@
 # Local development: runs the whole system without Kubernetes.
-#   cp .env.example .env      (add your ANTHROPIC_API_KEY)
+#   cp .env.example .env      (optional: add your ANTHROPIC_API_KEY)
 #   docker compose up --build
-# Then open http://localhost:8080
+# Then open http://localhost:8080 (set WEB_PORT to use a different host port)
+#
+# Health checks call each service's /healthz with Python's urllib, because the
+# slim Python images do not include curl.
 services:
   postgres:
     image: postgres:16
@@ -22,11 +25,26 @@ services:
       MODEL_PATH: /artifacts/model.joblib
     volumes: [./ml/artifacts:/artifacts:ro]
     ports: ["8001:8001"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   ai-service:
     build: {context: ., dockerfile: services/ai_service/Dockerfile}
-    env_file: [.env]
+    # .env is optional: without it ai-service uses its rule-based fallback.
+    env_file:
+      - path: .env
+        required: false
     ports: ["8002:8002"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   api:
     build: {context: ., dockerfile: services/api/Dockerfile}
@@ -37,6 +55,12 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
     ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   monitor:
     build: {context: ., dockerfile: services/monitor/Dockerfile}
@@ -46,14 +70,22 @@ services:
       REFERENCE_PATH: /artifacts/reference_stats.json
       CHECK_INTERVAL: "30"
     volumes: [./ml/artifacts:/artifacts:ro]
-    depends_on: [api]
+    depends_on:
+      api: {condition: service_healthy}
 
   web:
     build: {context: ., dockerfile: services/web/Dockerfile}
     environment:
       API_URL: http://api:8000
-    depends_on: [api]
-    ports: ["8080:8080"]
+    depends_on:
+      api: {condition: service_healthy}
+    ports: ["${WEB_PORT:-8080}:8080"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   pgdata:
