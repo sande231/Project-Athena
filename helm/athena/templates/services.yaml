@@ -35,6 +35,13 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
           {{- end }}
+          {{- with $svc.preStopSleep }}
+          # Keep serving for a few seconds after deletion starts, so the Service stops
+          # routing new requests here before gunicorn shuts down (no failed requests).
+          lifecycle:
+            preStop:
+              exec: {command: ["sleep", "{{ . }}"]}
+          {{- end }}
           env:
             {{- range $k, $v := $svc.env }}
             - {name: {{ $k }}, value: {{ $v | quote }}}
@@ -85,5 +92,9 @@ spec:
   metrics:
     - type: Resource
       resource: {name: cpu, target: {type: Utilization, averageUtilization: {{ $svc.autoscale.cpuPercent }}}}
+  {{- with $svc.autoscale.scaleDownSeconds }}
+  behavior:
+    scaleDown: {stabilizationWindowSeconds: {{ . }}}
+  {{- end }}
 {{- end }}
 {{- end }}
