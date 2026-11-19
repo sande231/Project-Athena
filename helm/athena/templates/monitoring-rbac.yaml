@@ -8,7 +8,8 @@ metadata:
 automountServiceAccountToken: false
 {{- if .Values.serviceMonitor.enabled }}
 ---
-# Tells Prometheus (kube-prometheus-stack) to scrape /metrics on every Athena service.
+# Tells Prometheus (kube-prometheus-stack) to scrape /metrics on every Athena service
+# that exposes it (services with "metrics: false" in values.yaml are skipped).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -16,7 +17,7 @@ metadata:
   labels: {release: {{ .Values.serviceMonitor.releaseLabel }}}
 spec:
   selector:
-    matchLabels: {part-of: athena}
+    matchLabels: {part-of: athena, metrics: enabled}
   endpoints:
     - port: http
       path: /metrics

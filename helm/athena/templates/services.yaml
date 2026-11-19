@@ -14,6 +14,13 @@ spec:
       labels: {app: {{ $name }}, part-of: athena}
     spec:
       serviceAccountName: athena
+      {{- if $svc.usesDatabase }}
+      # Wait until postgres accepts connections, so the app does not crash-loop on startup.
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432 -U {{ $.Values.postgres.user }}; do echo waiting for postgres; sleep 2; done"]
+      {{- end }}
       containers:
         - name: {{ $name }}
           image: "{{ $.Values.imageRegistry }}{{ $svc.image }}:{{ $.Values.imageTag }}"
@@ -59,7 +66,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ $name }}
-  labels: {app: {{ $name }}, part-of: athena}
+  {{- /* metrics defaults to on; only an explicit "metrics: false" turns it off */}}
+  labels: {app: {{ $name }}, part-of: athena{{ if ne $svc.metrics false }}, metrics: enabled{{ end }}}
 spec:
   selector: {app: {{ $name }}}
   ports: [{name: http, port: {{ $svc.port }}, targetPort: http}]
