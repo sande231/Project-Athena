@@ -42,12 +42,16 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r ml/requirements.txt
 python ml/train.py --data ml/data --sample 100000        # add --tune --trials 20 for Optuna
 
-# 2. Add your Claude key
+# 2. (Optional) Add your Claude key
 cp .env.example .env        # paste ANTHROPIC_API_KEY into .env
+# Without it, explanations use simple rule-based text.
 
 # 3. Run everything
 docker compose up --build
 # open http://localhost:8080
+# Port 8080 in use? Run: WEB_PORT=8081 docker compose up --build
+#   (or set WEB_PORT=8081 in .env), then open http://localhost:8081
+docker compose ps           # every service except monitor should show (healthy)
 
 # 4. Send traffic, then simulate an attack (in another terminal)
 pip install pandas requests
