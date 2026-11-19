@@ -47,6 +47,7 @@ services:
     replicas: 1
     env:
       API_URL: http://api:8000
+    metrics: false         # web has no /metrics route yet; set true once it does
   monitor:
     image: athena-monitor
     replicas: 1

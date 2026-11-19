@@ -10,6 +10,10 @@ if [ -z "$ANTHROPIC_API_KEY" ]; then
 fi
 DB_PASSWORD="${DB_PASSWORD:-athena-dev-password}"
 
+# Pinned so the demo does not change when a new upstream release comes out.
+KPS_VERSION="93.4.1"             # kube-prometheus-stack Helm chart
+METRICS_SERVER_VERSION="v0.9.1"
+
 for svc in api model_server ai_service monitor web; do
   name="athena-${svc//_/-}"
   docker build -f "services/$svc/Dockerfile" -t "$name:local" .
@@ -18,11 +22,12 @@ done
 
 # Prometheus + Grafana (release name must match serviceMonitor.releaseLabel)
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null
+helm repo update prometheus-community >/dev/null   # make sure the pinned version is in the local index
 helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-  --namespace monitoring --create-namespace --wait
+  --version "$KPS_VERSION" --namespace monitoring --create-namespace --wait
 
 # metrics-server is needed for the HorizontalPodAutoscaler on kind
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
 kubectl -n kube-system patch deployment metrics-server --type=json \
   -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]' || true
 
