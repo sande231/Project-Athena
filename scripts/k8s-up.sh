@@ -40,6 +40,6 @@ helm upgrade --install athena helm/athena --wait
 
 echo
 echo "Athena is up. Open it with:"
-echo "  kubectl port-forward svc/web 8080:8080        -> http://localhost:8080"
+echo "  kubectl port-forward svc/web 8081:8080        -> http://localhost:8081"
 echo "  kubectl port-forward svc/api 8000:8000        (for scripts/stream_transactions.py)"
 echo "  kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80  -> http://localhost:3000"
