@@ -197,7 +197,9 @@ Without a key, explanations use rule-based text.
 docker compose up --build
 ```
 
-Open **http://localhost:8080**. If port 8080 is taken, run `WEB_PORT=8081 docker compose up --build` instead.
+Open **http://localhost:8080**.
+
+> **Port 8080 already in use?** Run `WEB_PORT=8081 docker compose up --build` (or add `WEB_PORT=8081` to `.env`) and open **http://localhost:8081** instead.
 
 ```bash
 docker compose ps    # every service except monitor should show (healthy)
@@ -229,9 +231,11 @@ kind create cluster --name athena --config k8s/kind-config.local.yaml
 export ANTHROPIC_API_KEY=sk-ant-...    # optional
 ./scripts/k8s-up.sh
 
-# 3. Open the app
-kubectl port-forward svc/web 8080:8080
+# 3. Open the app (keep this terminal running)
+kubectl port-forward svc/web 8081:8080
 ```
+
+Then open **http://localhost:8081**. The Kubernetes demo uses local port 8081 so it never clashes with Docker Compose or anything else already on 8080.
 
 `k8s-up.sh` builds and loads all images, installs kube-prometheus-stack **93.4.1** and metrics-server **v0.9.1** (pinned), creates the `athena-secrets` Secret, and installs the Athena chart.
 
