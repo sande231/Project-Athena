@@ -199,7 +199,6 @@ docker compose up --build
 
 Open **http://localhost:8080**.
 
-> **Port 8080 already in use?** Run `WEB_PORT=8081 docker compose up --build` (or add `WEB_PORT=8081` to `.env`) and open **http://localhost:8081** instead.
 
 ```bash
 docker compose ps    # every service except monitor should show (healthy)
