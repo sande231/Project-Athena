@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena · Review queue</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+<main>
+  <h1>Review queue</h1>
+  <p class="sub">Look at each flagged order and mark it as fraud or genuine. Your answers show how accurate Athena is and are used to retrain it.</p>
+  <div class="stats">
+    <div class="stat"><b id="waiting">0</b><span>Orders waiting for a decision</span></div>
+    <div class="stat"><b id="done">0</b><span>Already checked</span></div>
+  </div>
+  <div class="tabs">
+    <button data-tab="review" class="active">Needs review</button>
+    <button data-tab="block">Blocked</button>
+  </div>
+  <div class="card"><div id="list"></div></div>
+</main>
+<script src="common.js"></script>
+<script>
+let tab = "review";
+
+document.querySelectorAll(".tabs button").forEach(btn => btn.addEventListener("click", () => {
+  tab = btn.dataset.tab;
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b === btn));
+  load();
+}));
+
+function render(o) {
+  const f = o.features || {};
+  const answer = o.label
+    ? `<div class="actions"><span class="tag ${o.label === "fraud" ? "block" : "approve"}">Marked as ${o.label === "fraud" ? "fraud" : "genuine"}</span>
+       <button class="ghost" data-id="${o.id}" data-fraud="${o.label !== "fraud"}">Change to ${o.label === "fraud" ? "genuine" : "fraud"}</button></div>`
+    : `<div class="actions">
+         <button class="danger" data-id="${o.id}" data-fraud="true">Fraud</button>
+         <button class="ghost" data-id="${o.id}" data-fraud="false">Genuine</button>
+       </div>`;
+  return `<div class="order">
+    <div class="row between"><span><b>${money(o.amount)}</b> · Order ${esc(o.order_id || o.id)}</span>${decisionTag(o.decision)}</div>
+    <div class="meta">${dateTime(o.created_at)}</div>
+    ${o.reason ? `<div class="reason">${esc(o.reason)}</div>` : ""}
+    <div class="details">
+      <span><b>Email:</b> ${esc(f.P_emaildomain || "unknown")}</span>
+      <span><b>Device:</b> ${esc(f.DeviceType || "unknown")}</span>
+      <span><b>Card:</b> ${esc(f.card4 || "unknown")} ${esc(f.card6 || "")}</span>
+      <span><b>Product:</b> ${esc(f.ProductCD || "unknown")}</span>
+    </div>
+    ${answer}
+  </div>`;
+}
+
+async function load() {
+  const [review, blocked] = await Promise.all([
+    api("/api/transactions?decision=review&limit=1000"),
+    api("/api/transactions?decision=block&limit=1000"),
+  ]);
+  const all = review.concat(blocked);
+  document.getElementById("waiting").textContent = all.filter(o => !o.label).length;
+  document.getElementById("done").textContent = all.filter(o => o.label).length;
+
+  // Unchecked orders first, newest first within each group.
+  const orders = (tab === "review" ? review : blocked).slice()
+    .sort((a, b) => (!!a.label - !!b.label) || (b.id - a.id));
+  document.getElementById("list").innerHTML = orders.slice(0, 100).map(render).join("") ||
+    '<div class="reason">Nothing here right now.</div>';
+}
+
+// One click handler for every Fraud / Genuine button on the page.
+document.getElementById("list").addEventListener("click", async e => {
+  const btn = e.target.closest("button[data-id]");
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/transactions/${btn.dataset.id}/label`,
+      {method: "PATCH", json: {is_fraud: btn.dataset.fraud === "true"}});
+    await load();
+  } catch (err) {
+    btn.disabled = false;
+    alert("Couldn't save that: " + err.message);
+  }
+});
+
+poll(load, 10000);
+</script>
+</body>
+</html>

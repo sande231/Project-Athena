@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena · Connect your store</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+<main>
+  <h1>Connect your store</h1>
+  <p class="sub">Choose one: install the plugin for your shop, or upload a spreadsheet of your orders.</p>
+
+  <div class="card">
+    <h2>1. Get your store key</h2>
+    <p class="muted">The key lets your shop send orders to Athena. Keep it private, like a password.</p>
+    <div id="key-mock" class="notice" hidden>Demo mode: store registration isn't built yet, so this key is made up and won't work for a real shop.</div>
+    <div class="form">
+      <label for="store-name">Store name</label><input id="store-name" placeholder="e.g. Maple Street Books">
+      <div style="margin-top:12px"><button id="get-key">Get my key</button></div>
+    </div>
+    <div id="key-out" hidden style="margin-top:14px">
+      <div class="keybox" id="key"></div>
+      <div class="row" style="margin-top:8px"><button id="copy" class="ghost">Copy</button>
+        <span class="muted">You won't see this key again. Save it somewhere safe now.</span></div>
+    </div>
+    <div id="key-msg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Install the plugin</h2>
+    <p class="muted">Shopify, WooCommerce and Square plugins are coming soon. Until then, your developer can send orders straight to Athena:</p>
+    <pre id="example">curl -X POST https://&lt;athena-address&gt;/api/transactions \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_STORE_KEY" \
+  -d '{"order_id": "A-1042", "transaction": {"TransactionAmt": 49.99, "P_emaildomain": "gmail.com", "DeviceType": "mobile"}}'</pre>
+  </div>
+
+  <div class="card">
+    <h2>Or: upload a CSV of orders</h2>
+    <p class="muted">Export orders from Excel or your sales system as CSV. Columns Athena understands:
+      <code>order_id</code>, <code>amount</code>, <code>email</code> (or email domain), <code>device</code> (desktop / mobile), <code>card_type</code>.
+      The dataset's own column names (<code>TransactionAmt</code>, <code>P_emaildomain</code>…) also work.</p>
+    <div id="upload-mock" class="notice" hidden>Demo mode: the bulk-upload endpoint isn't built yet, so each row is sent as a single order (up to 500 rows).</div>
+    <div class="form">
+      <input id="file" type="file" accept=".csv,text/csv">
+      <div style="margin-top:12px"><button id="upload">Check these orders</button></div>
+    </div>
+    <div id="upload-msg" class="msg"></div>
+    <div id="upload-result" class="stats" hidden style="margin-top:12px">
+      <div class="stat"><b id="u-scored" class="small">0</b><span>Orders checked</span></div>
+      <div class="stat"><b id="u-approve" class="small">0</b><span>Approved</span></div>
+      <div class="stat"><b id="u-review" class="small">0</b><span>Need a look</span></div>
+      <div class="stat"><b id="u-block" class="small">0</b><span>Blocked</span></div>
+    </div>
+    <p id="upload-link" class="muted" hidden><a href="owner.html">See the results in your Owner View →</a></p>
+  </div>
+</main>
+<script src="common.js"></script>
+<script>
+document.getElementById("key-mock").hidden = !MOCK.stores;
+document.getElementById("upload-mock").hidden = !MOCK.upload;
+
+// ---- Store key ----
+document.getElementById("get-key").addEventListener("click", async () => {
+  const name = document.getElementById("store-name").value.trim();
+  if (!name) return flash("key-msg", "Please enter your store's name.", true);
+  try {
+    let key;
+    if (MOCK.stores) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      key = "ath_demo_" + Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    } else {
+      // Proposed contract: POST /api/stores {name} -> {id, name, api_key}
+      key = (await api("/api/stores", {method: "POST", json: {name}})).api_key;
+    }
+    document.getElementById("key").textContent = key;
+    document.getElementById("key-out").hidden = false;
+    flash("key-msg", "");
+  } catch (err) {
+    flash("key-msg", "Couldn't create a key: " + err.message, true);
+  }
+});
+
+document.getElementById("copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(document.getElementById("key").textContent);
+    flash("key-msg", "Copied.");
+  } catch {
+    flash("key-msg", "Couldn't copy automatically. Select the key and copy it by hand.", true);
+  }
+});
+
+// ---- CSV upload ----
+
+// Splits CSV text into rows of cells. Handles quoted cells that contain commas.
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(v => v.trim() !== ""));
+}
+
+// Friendly spreadsheet headings -> the column names the model expects.
+const COLUMN_MAP = {
+  amount: "TransactionAmt", total: "TransactionAmt", email: "P_emaildomain", email_domain: "P_emaildomain",
+  device: "DeviceType", card_type: "card4", card: "card4", product: "ProductCD",
+};
+
+function rowToOrder(headers, cells, index) {
+  const tx = {};
+  let orderId = null;
+  headers.forEach((h, i) => {
+    const key = h.trim();
+    let value = (cells[i] ?? "").trim();
+    if (value === "") return;
+    if (key.toLowerCase() === "order_id") { orderId = value; return; }
+    const column = COLUMN_MAP[key.toLowerCase()] || key;
+    if (column === "P_emaildomain" && value.includes("@")) value = value.split("@").pop();
+    tx[column] = value !== "" && !isNaN(value) ? Number(value) : value;
+  });
+  return {order_id: orderId || "CSV-" + (index + 1), transaction: tx};
+}
+
+document.getElementById("upload").addEventListener("click", async () => {
+  const file = document.getElementById("file").files[0];
+  if (!file) return flash("upload-msg", "Choose a CSV file first.", true);
+  const btn = document.getElementById("upload");
+  btn.disabled = true;
+  const counts = {scored: 0, approve: 0, review: 0, block: 0};
+  const show = () => {
+    document.getElementById("upload-result").hidden = false;
+    for (const k of Object.keys(counts)) document.getElementById("u-" + k).textContent = counts[k];
+  };
+  try {
+    if (MOCK.upload) {
+      const rows = parseCsv(await file.text());
+      if (rows.length < 2) throw new Error("the file has no order rows");
+      const [headers, ...body] = rows;
+      const limited = body.slice(0, 500);
+      for (let i = 0; i < limited.length; i++) {
+        const r = await api("/api/transactions", {method: "POST", json: rowToOrder(headers, limited[i], i)});
+        counts.scored++;
+        if (counts[r.decision] !== undefined) counts[r.decision]++;
+        flash("upload-msg", `Checking… ${counts.scored} of ${limited.length}`);
+        show();
+      }
+      flash("upload-msg", body.length > 500 ? `Done. Checked the first 500 of ${body.length} rows.` : "Done.");
+    } else {
+      // Proposed contract: multipart form with field "file" -> {scored, approved, review, blocked}
+      const form = new FormData();
+      form.append("file", file);
+      const r = await api("/api/transactions/upload", {method: "POST", body: form});
+      Object.assign(counts, {scored: r.scored, approve: r.approved, review: r.review, block: r.blocked});
+      show();
+      flash("upload-msg", "Done.");
+    }
+    document.getElementById("upload-link").hidden = false;
+  } catch (err) {
+    flash("upload-msg", "Upload stopped: " + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

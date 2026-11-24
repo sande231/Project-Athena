@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena · Drift</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+<nav id="nav"></nav>
+<main>
+  <h1>Data drift</h1>
+  <p class="sub">Compares recent orders with the orders the model was trained on. A score (PSI) above the dashed line means that part of the data has changed enough to hurt accuracy.</p>
+  <div id="mock-note" class="notice" hidden>Showing sample data: the drift endpoint isn't built yet.</div>
+  <p id="checked" class="muted"></p>
+  <div class="card"><div id="chart" style="height:300px"></div></div>
+  <div class="grid-2">
+    <div class="card">
+      <h2>Per feature</h2>
+      <table>
+        <thead><tr><th>What it measures</th><th>PSI</th><th>Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="muted">Click a row to compare before and after.</p>
+    </div>
+    <div class="card"><div id="compare" style="height:300px"></div></div>
+  </div>
+</main>
+<script src="common.js"></script>
+<script>
+// Friendly names for the dataset's column codes.
+const NAMES = {
+  TransactionAmt: "Order amount", P_emaildomain: "Buyer email domain", DeviceType: "Device type",
+  ProductCD: "Product type", C1: "Card activity count", D1: "Days since card first seen",
+};
+const nameOf = f => NAMES[f] || f;
+let data = null, selected = null;
+
+function drawCompare(f) {
+  selected = f.feature;
+  document.querySelectorAll("#rows tr").forEach(tr => tr.classList.toggle("selected", tr.dataset.f === f.feature));
+  if (!f.reference || !f.current) {
+    document.getElementById("compare").innerHTML = '<p class="muted">No distribution data for this feature.</p>';
+    return;
+  }
+  Plotly.react("compare", [
+    {type: "bar", name: "Training data", x: f.reference.labels, y: f.reference.shares.map(v => v * 100), marker: {color: "#9aa5bb"}},
+    {type: "bar", name: "Recent orders", x: f.current.labels, y: f.current.shares.map(v => v * 100), marker: {color: "#1f2a44"}},
+  ], {barmode: "group", title: {text: `${nameOf(f.feature)}: before vs now (% of orders)`, font: {size: 14}},
+      margin: {t: 40, l: 40, r: 10, b: 40}, legend: {orientation: "h", y: -0.2}}, {displayModeBar: false, responsive: true});
+}
+
+async function load() {
+  data = await getData("drift", "/api/drift");
+  document.getElementById("mock-note").hidden = !MOCK.drift;
+  document.getElementById("checked").textContent =
+    `Last checked ${dateTime(data.checked_at)}${data.window_orders ? ` · ${data.window_orders} recent orders` : ""}`;
+
+  const feats = data.features.slice().sort((a, b) => a.psi - b.psi);  // largest at the top of the chart
+  Plotly.react("chart", [{
+    type: "bar", orientation: "h",
+    y: feats.map(f => nameOf(f.feature)), x: feats.map(f => f.psi),
+    marker: {color: feats.map(f => f.drift ? "#a12a2a" : "#9aa5bb")},
+    text: feats.map(f => f.drift ? "Changed" : ""), textposition: "outside",
+  }], {
+    title: {text: "Drift score (PSI) per feature", font: {size: 14}},
+    shapes: [{type: "line", x0: data.threshold, x1: data.threshold, yref: "paper", y0: 0, y1: 1, line: {dash: "dash", color: "#5b6478"}}],
+    margin: {l: 170, r: 60, t: 40, b: 30},
+  }, {displayModeBar: false, responsive: true});
+
+  document.getElementById("rows").innerHTML = data.features.slice().sort((a, b) => b.psi - a.psi).map(f => `
+    <tr class="clickable" data-f="${esc(f.feature)}">
+      <td>${esc(nameOf(f.feature))} <span class="muted">${esc(f.feature)}</span></td>
+      <td>${Number(f.psi).toFixed(2)}</td>
+      <td>${f.drift ? '<span class="tag block">Changed</span>' : '<span class="tag approve">Stable</span>'}</td>
+    </tr>`).join("");
+
+  const keep = data.features.find(f => f.feature === selected) || data.features.reduce((a, b) => (b.psi > a.psi ? b : a));
+  drawCompare(keep);
+}
+
+document.getElementById("rows").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-f]");
+  if (tr) drawCompare(data.features.find(f => f.feature === tr.dataset.f));
+});
+
+poll(load, 30000);
+</script>
+</body>
+</html>

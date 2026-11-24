@@ -8,20 +8,25 @@ from flask import Flask, Response, request, send_from_directory
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
+# Request headers passed through to athena-api. Content-Type is passed as sent, so
+# JSON bodies and file uploads (multipart/form-data) both arrive intact.
+FORWARD_HEADERS = ("Content-Type", "Authorization", "X-API-Key")
+
 app = Flask(__name__, static_folder=None)
 
 
-@app.route("/api/<path:path>", methods=["GET", "POST", "PATCH"])
+@app.route("/api/<path:path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 def proxy(path):
+    headers = {h: request.headers[h] for h in FORWARD_HEADERS if h in request.headers}
     upstream = requests.request(request.method, f"{API_URL}/api/{path}", params=request.args,
-                                data=request.get_data(), headers={"Content-Type": "application/json"},
-                                timeout=30)
-    return Response(upstream.content, upstream.status_code, content_type="application/json")
+                                data=request.get_data(), headers=headers, timeout=30)
+    return Response(upstream.content, upstream.status_code,
+                    content_type=upstream.headers.get("Content-Type", "application/json"))
 
 
 @app.get("/")
 def index():
-    return send_from_directory(STATIC, "owner.html")
+    return send_from_directory(STATIC, "index.html")
 
 
 @app.get("/<path:name>")

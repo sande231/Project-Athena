@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena · Models</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+<main>
+  <div class="row between">
+    <h1>Models</h1>
+    <button id="retrain">Retrain model</button>
+  </div>
+  <p class="sub">Every version of the fraud model, how well it scored, and Claude's review of its training code.</p>
+  <div id="mock-note" class="notice" hidden>Showing sample data: the model endpoints aren't built yet. Deploy, Rollback and Run code review only change this page. Retrain calls the real API.</div>
+  <div id="page-msg" class="msg"></div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Version</th><th>Created</th><th>ROC-AUC</th><th>Precision</th><th>Recall</th><th>False alarms</th><th>Status</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="muted">Click a version to see its details.</p>
+  </div>
+  <div class="card" id="detail" hidden>
+    <div class="row between">
+      <h2 id="d-name"></h2>
+      <span class="row">
+        <button id="review" class="ghost">Run code review</button>
+        <button id="deploy">Deploy</button>
+        <button id="rollback" class="ghost">Roll back to previous</button>
+      </span>
+    </div>
+    <div id="d-msg" class="msg"></div>
+    <h2 style="margin-top:12px">Code review</h2>
+    <div id="d-review"></div>
+  </div>
+</main>
+<script src="common.js"></script>
+<script>
+const STATUS = {live: ["approve", "Live"], staging: ["review", "Staging"], retired: ["neutral", "Retired"]};
+const num = v => v == null ? "–" : Number(v).toFixed(3);
+let models = [], selectedId = null;
+
+function renderTable() {
+  document.getElementById("rows").innerHTML = models.map(m => {
+    const [cls, word] = STATUS[m.status] || ["neutral", m.status];
+    const x = m.metrics || {};
+    return `<tr class="clickable${m.id === selectedId ? " selected" : ""}" data-id="${m.id}">
+      <td><b>${esc(m.name)}</b></td><td>${dateTime(m.created_at)}</td>
+      <td>${num(x.roc_auc)}</td><td>${pct(x.precision_at_block) ?? "–"}</td><td>${pct(x.recall_at_block) ?? "–"}</td>
+      <td>${pct(x.false_positive_rate) ?? "–"}</td>
+      <td><span class="tag ${cls}">${esc(word)}</span></td></tr>`;
+  }).join("") || '<tr><td colspan="7" class="muted">No models yet.</td></tr>';
+}
+
+function renderDetail() {
+  const m = models.find(x => x.id === selectedId);
+  document.getElementById("detail").hidden = !m;
+  if (!m) return;
+  document.getElementById("d-name").textContent = m.name;
+  document.getElementById("deploy").disabled = m.status === "live";
+  document.getElementById("rollback").disabled = m.status !== "live";
+  const r = m.code_review;
+  document.getElementById("d-review").innerHTML = !r
+    ? '<p class="muted">Not reviewed yet. Click "Run code review".</p>'
+    : r.findings.length === 0
+      ? `<p><span class="tag approve">No problems found</span> <span class="muted">${dateTime(r.created_at)}</span></p>`
+      : `<p class="muted">Reviewed ${dateTime(r.created_at)}</p><table>
+          <thead><tr><th>Line</th><th>Severity</th><th>Issue</th><th>Suggested fix</th></tr></thead><tbody>
+          ${r.findings.map(f => `<tr><td>${esc(f.line)}</td>
+            <td><span class="tag ${f.severity === "high" ? "block" : f.severity === "medium" ? "review" : "neutral"}">${esc(f.severity)}</span></td>
+            <td>${esc(f.issue)}</td><td>${esc(f.suggestion)}</td></tr>`).join("")}
+          </tbody></table>`;
+}
+
+async function load() {
+  const data = await getData("models", "/api/models");
+  models = data.models || data;
+  document.getElementById("mock-note").hidden = !MOCK.models;
+  if (selectedId == null && models.length) selectedId = models[0].id;
+  renderTable();
+  renderDetail();
+}
+
+// Runs a model action for real, or pretends while the endpoints are mocked.
+async function action(kind, mockChange) {
+  const m = models.find(x => x.id === selectedId);
+  if (kind !== "review" && !confirm(`${kind === "deploy" ? "Deploy" : "Roll back"} ${m.name}? This changes the model scoring live orders.`)) return;
+  try {
+    if (MOCK.models) {
+      mockChange(m);
+      flash("d-msg", "Done (sample data only).");
+    } else {
+      const r = await api(`/api/models/${m.id}/${kind}`, {method: "POST"});
+      flash("d-msg", (r && r.message) || "Done.");
+      await load();
+    }
+    renderTable();
+    renderDetail();
+  } catch (err) {
+    flash("d-msg", "That didn't work: " + err.message, true);
+  }
+}
+
+document.getElementById("rows").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-id]");
+  if (!tr) return;
+  selectedId = Number(tr.dataset.id);
+  flash("d-msg", "");
+  renderTable();
+  renderDetail();
+});
+
+document.getElementById("deploy").addEventListener("click", () => action("deploy", m => {
+  models.forEach(x => { if (x.status === "live") x.status = "retired"; });
+  m.status = "live";
+}));
+
+document.getElementById("rollback").addEventListener("click", () => action("rollback", m => {
+  const previous = models.find(x => x.id !== m.id && new Date(x.created_at) < new Date(m.created_at));
+  if (!previous) throw new Error("there is no earlier version");
+  m.status = "retired";
+  previous.status = "live";
+}));
+
+document.getElementById("review").addEventListener("click", () => action("review", m => {
+  m.code_review = m.code_review || {created_at: new Date().toISOString(), findings: []};
+}));
+
+document.getElementById("retrain").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/retrain", {method: "POST"});
+    flash("page-msg", `Retraining ${r.status}. ${r.note || ""}`);
+  } catch (err) {
+    flash("page-msg", "Couldn't start retraining: " + err.message, true);
+  }
+});
+
+load().catch(() => showOffline(true));
+</script>
+</body>
+</html>

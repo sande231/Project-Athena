@@ -7,59 +7,87 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
-<nav><strong>Athena</strong><a href="owner.html">Owner View</a><a class="active" href="engineer.html">Engineer</a><a href="store.html">Demo store</a></nav>
+<nav id="nav"></nav>
 <main>
-  <h1>Model health</h1>
-  <p class="sub">Live metrics from athena-api. Full system metrics are in Grafana.</p>
+  <div class="row between">
+    <h1>Model health</h1>
+    <span class="row"><a id="grafana" class="button ghost" target="_blank" rel="noopener" hidden>Open Grafana</a>
+      <button id="retrain">Retrain model</button></span>
+  </div>
+  <p class="sub">Live numbers from athena-api, refreshed every 5 seconds. Charts cover the time this page has been open.</p>
+  <div id="retrain-msg" class="msg"></div>
   <div class="stats">
+    <div class="stat"><b id="m-orders">–</b><span>Orders scored</span></div>
     <div class="stat"><b id="m-flag">–</b><span>Flag rate (review + block)</span></div>
     <div class="stat"><b id="m-lat">–</b><span>Avg latency (ms)</span></div>
-    <div class="stat"><b id="m-prec">–</b><span>Precision (labeled orders)</span></div>
-    <div class="stat"><b id="m-rec">–</b><span>Recall (labeled orders)</span></div>
+    <div class="stat"><b id="m-prec">–</b><span>Precision (labelled orders)</span></div>
+    <div class="stat"><b id="m-rec">–</b><span>Recall (labelled orders)</span></div>
   </div>
-  <div class="card"><div id="chart" style="height:280px"></div></div>
+  <div class="grid-2">
+    <div class="card"><div id="chart-flag" style="height:240px"></div></div>
+    <div class="card"><div id="chart-volume" style="height:240px"></div></div>
+  </div>
+  <div class="card"><div id="chart-latency" style="height:220px"></div></div>
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2 style="font-size:16px;margin:0">Alerts</h2>
-      <button onclick="retrain()">Retrain model</button>
-    </div>
-    <div id="alerts"><p class="sub">No alerts.</p></div>
+    <div class="row between"><h2>Latest alerts</h2><a class="muted" href="alerts.html">All alerts →</a></div>
+    <div id="alerts"><p class="muted">No alerts.</p></div>
   </div>
 </main>
+<script src="common.js"></script>
 <script>
-const history = {t: [], flag: []};
-const pct = v => v == null ? "–" : (v * 100).toFixed(1) + "%";
+const hist = {t: [], flag: [], latency: [], newOrders: []};
+let lastOrders = null;
+const layout = title => ({margin: {t: 34, l: 44, r: 10, b: 30}, title: {text: title, font: {size: 14}}, showlegend: false});
+const config = {displayModeBar: false, responsive: true};
 
-async function retrain() {
-  const r = await fetch("/api/retrain", {method: "POST"}).then(r => r.json());
-  alert("Retrain: " + r.status);
+if (GRAFANA_URL) {
+  const g = document.getElementById("grafana");
+  g.href = GRAFANA_URL;
+  g.hidden = false;
 }
+
+document.getElementById("retrain").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/retrain", {method: "POST"});
+    flash("retrain-msg", `Retraining ${r.status}. ${r.note || ""}`);
+  } catch (err) {
+    flash("retrain-msg", "Couldn't start retraining: " + err.message, true);
+  }
+});
+
+const labelled = v => v == null ? '<span class="muted" style="font-size:14px">Not enough labels yet</span>' : pct(v);
 
 async function load() {
-  const [s, alerts] = await Promise.all([
-    fetch("/api/metrics/summary").then(r => r.json()),
-    fetch("/api/alerts").then(r => r.json())]);
-  document.getElementById("m-flag").textContent = pct(s.flag_rate);
-  document.getElementById("m-lat").textContent = s.avg_latency_ms;
-  document.getElementById("m-prec").textContent = pct(s.precision);
-  document.getElementById("m-rec").textContent = pct(s.recall);
+  const [s, alerts] = await Promise.all([api("/api/metrics/summary"), api("/api/alerts")]);
 
-  history.t.push(new Date()); history.flag.push(s.flag_rate * 100);
-  Plotly.react("chart", [{x: history.t, y: history.flag, mode: "lines", name: "Flag rate %"}],
-    {margin: {t: 30, l: 40, r: 10, b: 30}, title: {text: "Flag rate over time (%)", font: {size: 14}}});
+  document.getElementById("m-orders").textContent = s.orders;
+  document.getElementById("m-flag").textContent = pct(s.flag_rate) ?? "–";
+  document.getElementById("m-lat").textContent = s.avg_latency_ms;
+  document.getElementById("m-prec").innerHTML = labelled(s.precision);
+  document.getElementById("m-rec").innerHTML = labelled(s.recall);
+
+  hist.t.push(new Date());
+  hist.flag.push(s.flag_rate * 100);
+  hist.latency.push(s.avg_latency_ms);
+  hist.newOrders.push(lastOrders == null ? 0 : Math.max(0, s.orders - lastOrders));
+  lastOrders = s.orders;
+
+  Plotly.react("chart-flag", [{x: hist.t, y: hist.flag, mode: "lines"}], layout("Flag rate (%)"), config);
+  Plotly.react("chart-volume", [{x: hist.t, y: hist.newOrders, type: "bar"}], layout("New orders per 5 seconds"), config);
+  Plotly.react("chart-latency", [{x: hist.t, y: hist.latency, mode: "lines"}], layout("Average latency (ms)"), config);
 
   if (alerts.length) {
-    document.getElementById("alerts").innerHTML = alerts.map(a => `
-      <div class="alert ${a.severity}">
-        <b>${a.type} · ${a.severity}</b> <span class="sub">${new Date(a.created_at).toLocaleTimeString()}</span>
-        <div>${a.explanation.summary || ""}</div>
-        <div class="sub">Likely cause: ${a.explanation.likely_cause || "–"}</div>
-        <div class="sub">Action: ${a.explanation.action || "–"}</div>
-      </div>`).join("");
+    document.getElementById("alerts").innerHTML = alerts.slice(0, 3).map(a => {
+      const sev = ["info", "warning", "critical"].includes(a.severity) ? a.severity : "warning";
+      return `<div class="alert ${sev}">
+        <span class="tag ${sev}">${SEVERITY_WORDS[sev]}</span> <b>${esc(a.type)}</b>
+        <span class="muted">${dateTime(a.created_at)}</span>
+        <div>${esc((a.explanation || {}).summary || "")}</div>
+      </div>`;
+    }).join("");
   }
 }
-load();
-setInterval(load, 5000);
+poll(load, 5000);
 </script>
 </body>
 </html>

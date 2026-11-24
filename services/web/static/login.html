@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena · Log in</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+<main>
+  <div class="card form" style="margin:24px auto">
+    <h1 id="title">Log in</h1>
+    <div id="mock-note" class="notice" hidden>Demo mode: accounts aren't built yet, so any email and password work. Pick a role to see that person's start page.</div>
+    <form id="form">
+      <div id="signup-only" hidden>
+        <label for="name">Your name</label><input id="name" autocomplete="name">
+      </div>
+      <label for="email">Email</label><input id="email" type="email" required autocomplete="email">
+      <label for="password">Password</label><input id="password" type="password" required minlength="8" autocomplete="current-password">
+      <div id="role-wrap">
+        <label for="role">I am a…</label>
+        <select id="role">
+          <option value="owner">Store owner</option>
+          <option value="analyst">Fraud analyst</option>
+          <option value="engineer">ML engineer</option>
+        </select>
+      </div>
+      <div style="margin-top:16px"><button id="submit" type="submit">Log in</button></div>
+      <div id="msg" class="msg"></div>
+    </form>
+    <p class="muted" id="switch"></p>
+  </div>
+</main>
+<script src="common.js"></script>
+<script>
+const signup = new URLSearchParams(location.search).get("mode") === "signup";
+const START_PAGE = {owner: "owner.html", analyst: "review.html", engineer: "engineer.html", admin: "engineer.html"};
+
+document.getElementById("title").textContent = signup ? "Create your account" : "Log in";
+document.getElementById("submit").textContent = signup ? "Sign up" : "Log in";
+document.getElementById("signup-only").hidden = !signup;
+document.getElementById("mock-note").hidden = !MOCK.auth;
+// With a real backend the role comes from the account, so the picker is only shown
+// for sign-up, or in demo mode.
+document.getElementById("role-wrap").hidden = !(signup || MOCK.auth);
+document.getElementById("password").autocomplete = signup ? "new-password" : "current-password";
+document.getElementById("switch").innerHTML = signup
+  ? 'Already have an account? <a href="login.html">Log in</a>'
+  : 'New to Athena? <a href="login.html?mode=signup">Create an account</a>';
+
+document.getElementById("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const role = document.getElementById("role").value;
+  try {
+    let result;
+    if (MOCK.auth) {
+      result = {token: "demo-token", user: {email, role, name: document.getElementById("name").value || email}};
+    } else {
+      // Proposed contract (agree with backend): POST /api/auth/login {email, password}
+      //   -> {token, user: {name, email, role}}. Sign-up endpoint not specified yet.
+      result = await api("/api/auth/login", {method: "POST", json: {email, password}});
+    }
+    store.set("athena_token", result.token);
+    store.set("athena_user", result.user);
+    location.href = START_PAGE[result.user.role] || "owner.html";
+  } catch (err) {
+    flash("msg", "Couldn't log in: " + err.message, true);
+  }
+});
+</script>
+</body>
+</html>

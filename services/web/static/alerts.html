@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena · Alerts</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+<main>
+  <h1>Alerts</h1>
+  <p class="sub">Athena raises an alert when your orders start to look different or the fraud checks need attention. Each one explains what happened and what to do.</p>
+  <div class="card"><div id="alerts"></div></div>
+</main>
+<script src="common.js"></script>
+<script>
+const TYPE_WORDS = {drift: "Orders look different", quality: "Accuracy dropped", system: "System problem"};
+
+function render(a) {
+  const ex = a.explanation || {};
+  const sev = ["info", "warning", "critical"].includes(a.severity) ? a.severity : "warning";
+  const psi = (a.metrics && a.metrics.psi) || {};
+  const changed = Object.entries(psi).filter(([, v]) => v > 0.2).map(([k]) => k);
+  return `<div class="alert ${sev}">
+    <div class="row between">
+      <span><span class="tag ${sev}">${SEVERITY_WORDS[sev]}</span> <b>${esc(TYPE_WORDS[a.type] || a.type)}</b></span>
+      <span class="muted">${dateTime(a.created_at)}</span>
+    </div>
+    <dl>
+      <dt>What happened</dt><dd>${esc(ex.summary || "No explanation yet.")}</dd>
+      <dt>Likely cause</dt><dd>${esc(ex.likely_cause || "–")}</dd>
+      <dt>What to do</dt><dd>${esc(ex.action || "–")}</dd>
+      ${changed.length ? `<dt>Changed data</dt><dd class="muted">${changed.map(esc).join(", ")}</dd>` : ""}
+    </dl>
+  </div>`;
+}
+
+async function load() {
+  const alerts = await api("/api/alerts");
+  document.getElementById("alerts").innerHTML = alerts.map(render).join("") ||
+    '<p class="muted">No alerts. Everything looks normal.</p>';
+}
+poll(load, 10000);
+</script>
+</body>
+</html>

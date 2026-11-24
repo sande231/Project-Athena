@@ -6,55 +6,57 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<nav><strong>Athena</strong><a class="active" href="owner.html">Owner View</a><a href="engineer.html">Engineer</a><a href="store.html">Demo store</a></nav>
+<nav id="nav"></nav>
 <main>
-  <h1>Today's orders</h1>
-  <p class="sub">Every order is checked for fraud. Review the yellow ones; red ones were blocked.</p>
+  <h1>Your orders</h1>
+  <p class="sub">Every order is checked for fraud. Yellow ones need a quick look; red ones were stopped.</p>
   <div class="stats">
     <div class="stat"><b id="s-orders">0</b><span>Orders checked</span></div>
     <div class="stat"><b id="s-approved">0</b><span>Approved</span></div>
-    <div class="stat"><b id="s-review">0</b><span>Need review</span></div>
+    <div class="stat"><b id="s-review">0</b><span>Need a look</span></div>
     <div class="stat"><b id="s-blocked">0</b><span>Blocked</span></div>
+    <div class="stat"><b id="s-saved">$0.00</b><span>Fraud stopped (blocked orders)</span></div>
   </div>
   <div class="columns">
     <div class="col"><h2><span class="tag approve">Approved</span></h2><div id="approve"></div></div>
-    <div class="col"><h2><span class="tag review">Review</span></h2><div id="review"></div></div>
+    <div class="col">
+      <h2 class="row between"><span class="tag review">Needs review</span><a class="muted" href="review.html">Review these →</a></h2>
+      <div id="review"></div>
+    </div>
     <div class="col"><h2><span class="tag block">Blocked</span></h2><div id="block"></div></div>
   </div>
 </main>
+<script src="common.js"></script>
 <script>
-const money = v => v == null ? "" : "$" + Number(v).toFixed(2);
-
-async function label(id, isFraud) {
-  await fetch(`/api/transactions/${id}/label`, {method: "PATCH", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({is_fraud: isFraud})});
-  load();
-}
-
 function render(order) {
-  const buttons = order.decision === "approve" ? "" :
-    order.label ? `<div class="reason">Marked as ${order.label}</div>` :
-    `<div style="margin-top:6px"><button class="ghost" onclick="label(${order.id}, true)">Fraud</button>
-     <button class="ghost" onclick="label(${order.id}, false)">Legit</button></div>`;
-  return `<div class="order">Order ${order.order_id || order.id} · <b>${money(order.amount)}</b>
-    ${order.reason ? `<div class="reason">${order.reason}</div>` : ""}${buttons}</div>`;
+  const label = order.label ? `<div class="meta">Checked by your team: ${order.label === "fraud" ? "fraud" : "genuine"}</div>` : "";
+  return `<div class="order">
+    <b>${money(order.amount)}</b> · Order ${esc(order.order_id || order.id)}
+    <div class="meta">${clock(order.created_at)}</div>
+    ${order.reason ? `<div class="reason">${esc(order.reason)}</div>` : ""}
+    ${label}
+  </div>`;
 }
 
 async function load() {
-  const [summary, orders] = await Promise.all([
-    fetch("/api/metrics/summary").then(r => r.json()),
-    fetch("/api/transactions?limit=60").then(r => r.json())]);
+  const [summary, orders, blocked] = await Promise.all([
+    api("/api/metrics/summary"),
+    api("/api/transactions?limit=60"),
+    api("/api/transactions?decision=block&limit=1000"),
+  ]);
   document.getElementById("s-orders").textContent = summary.orders;
   document.getElementById("s-approved").textContent = summary.approved;
   document.getElementById("s-review").textContent = summary.review;
   document.getElementById("s-blocked").textContent = summary.blocked;
+  document.getElementById("s-saved").textContent = money(blocked.reduce((sum, o) => sum + (o.amount || 0), 0));
+
   for (const d of ["approve", "review", "block"]) {
-    document.getElementById(d).innerHTML = orders.filter(o => o.decision === d).slice(0, 15).map(render).join("") ||
+    document.getElementById(d).innerHTML =
+      orders.filter(o => o.decision === d).slice(0, 15).map(render).join("") ||
       '<div class="reason">Nothing here yet.</div>';
   }
 }
-load();
-setInterval(load, 5000);
+poll(load, 5000);
 </script>
 </body>
 </html>

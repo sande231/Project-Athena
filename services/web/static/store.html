@@ -6,33 +6,113 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<nav><strong>Athena</strong><a href="owner.html">Owner View</a><a href="engineer.html">Engineer</a><a class="active" href="store.html">Demo store</a></nav>
+<nav id="nav"></nav>
 <main>
-  <h1>Demo store checkout</h1>
-  <p class="sub">Acts as the store plugin: each purchase is sent to Athena. For bulk traffic and the attack, run <code>scripts/stream_transactions.py</code>.</p>
-  <div class="card" style="max-width:480px">
-    <label>Amount (USD)</label><input id="amt" type="number" value="59.99" step="0.01">
-    <label>Email domain</label><input id="email" value="gmail.com">
-    <label>Device</label><select id="device"><option>desktop</option><option>mobile</option></select>
-    <label>Card type</label><select id="card"><option>visa</option><option>mastercard</option><option>american express</option></select>
-    <div style="margin-top:16px"><button onclick="buy()">Buy now</button></div>
-    <div id="result" style="margin-top:16px"></div>
+  <h1>Demo store</h1>
+  <p class="sub">Acts as the store plugin: every purchase here is sent to Athena to be checked. Use the traffic controls during the presentation.</p>
+  <div class="grid-2">
+    <div class="card">
+      <h2>Checkout</h2>
+      <label for="amt">Amount (USD)</label><input id="amt" type="number" value="59.99" step="0.01" min="0">
+      <label for="email">Email domain</label><input id="email" value="gmail.com">
+      <label for="device">Device</label><select id="device"><option>desktop</option><option>mobile</option></select>
+      <label for="card">Card type</label><select id="card"><option>visa</option><option>mastercard</option><option>american express</option></select>
+      <div style="margin-top:16px"><button id="buy">Buy now</button></div>
+      <div id="result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <h2>Traffic controls</h2>
+      <p class="muted">Sends made-up orders automatically. "Simulate attack" switches to a new fraud pattern: amounts 4× higher, a new email domain and mobile devices.</p>
+      <label for="rate">Orders per second</label>
+      <select id="rate"><option value="1">1</option><option value="2" selected>2</option><option value="5">5</option></select>
+      <div class="row" style="margin-top:14px">
+        <button id="start">Start traffic</button>
+        <button id="attack" class="danger">Simulate attack</button>
+        <button id="stop" class="ghost" disabled>Stop</button>
+      </div>
+      <p id="mode" class="muted" style="margin-top:12px">Stopped.</p>
+      <div class="stats" style="margin:12px 0 0">
+        <div class="stat"><b id="c-sent" class="small">0</b><span>Sent</span></div>
+        <div class="stat"><b id="c-approve" class="small">0</b><span>Approved</span></div>
+        <div class="stat"><b id="c-review" class="small">0</b><span>Review</span></div>
+        <div class="stat"><b id="c-block" class="small">0</b><span>Blocked</span></div>
+      </div>
+    </div>
   </div>
 </main>
+<script src="common.js"></script>
 <script>
-async function buy() {
+// ---- Single purchase ----
+document.getElementById("buy").addEventListener("click", async () => {
+  const id = Date.now();
   const tx = {
-    TransactionID: Date.now(), TransactionDT: Math.floor(Date.now() / 1000) % 15000000,
-    TransactionAmt: Number(document.getElementById("amt").value), ProductCD: "W",
-    P_emaildomain: document.getElementById("email").value, DeviceType: document.getElementById("device").value,
-    card4: document.getElementById("card").value, card6: "debit"
+    TransactionID: id, TransactionDT: Math.floor(id / 1000) % 15000000, ProductCD: "W",
+    TransactionAmt: Number(document.getElementById("amt").value),
+    P_emaildomain: document.getElementById("email").value,
+    DeviceType: document.getElementById("device").value,
+    card4: document.getElementById("card").value, card6: "debit",
   };
-  const r = await fetch("/api/transactions", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({order_id: "WEB-" + tx.TransactionID, transaction: tx})}).then(r => r.json());
-  document.getElementById("result").innerHTML = r.error ? `<span class="tag block">${r.error}</span>` :
-    `<span class="tag ${r.decision}">${r.decision}</span> score ${r.score} · ${r.latency_ms} ms
-     ${r.reason ? `<div class="sub" style="margin-top:6px">${r.reason}</div>` : ""}`;
+  const out = document.getElementById("result");
+  try {
+    const r = await api("/api/transactions", {method: "POST", json: {order_id: "WEB-" + id, transaction: tx}});
+    out.innerHTML = `${decisionTag(r.decision)} <span class="muted">score ${r.score} · ${r.latency_ms} ms</span>
+      ${r.reason ? `<div class="reason" style="margin-top:6px">${esc(r.reason)}</div>` : ""}`;
+  } catch (err) {
+    out.innerHTML = `<span class="tag block">Error</span> ${esc(err.message)}`;
+  }
+});
+
+// ---- Automatic traffic ----
+const counts = {sent: 0, approve: 0, review: 0, block: 0};
+let running = false, attack = false;
+const pick = list => list[Math.floor(Math.random() * list.length)];
+
+function makeOrder() {
+  const id = Date.now() + Math.floor(Math.random() * 1000);
+  const amt = +(10 + Math.random() * 290).toFixed(2);
+  return {order_id: (attack ? "ATTACK-" : "DEMO-") + id, transaction: {
+    TransactionID: id, TransactionDT: Math.floor(id / 1000) % 15000000, ProductCD: "W",
+    TransactionAmt: attack ? +(amt * 4).toFixed(2) : amt,
+    P_emaildomain: attack ? "fastmail-x.biz" : pick(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com"]),
+    DeviceType: attack ? "mobile" : pick(["desktop", "mobile"]),
+    card4: pick(["visa", "mastercard"]), card6: pick(["debit", "credit"]),
+  }};
 }
+
+function showCounts() {
+  for (const k of Object.keys(counts)) document.getElementById("c-" + k).textContent = counts[k];
+}
+
+async function sendOne() {
+  if (!running) return;
+  try {
+    const r = await api("/api/transactions", {method: "POST", json: makeOrder()});
+    counts.sent++;
+    if (counts[r.decision] !== undefined) counts[r.decision]++;
+    showCounts();
+    showOffline(false);
+  } catch (err) {
+    showOffline(true);
+  }
+  setTimeout(sendOne, 1000 / Number(document.getElementById("rate").value));
+}
+
+function start(isAttack) {
+  attack = isAttack;
+  document.getElementById("mode").innerHTML = isAttack
+    ? '<span class="tag block">Attack running</span> Orders now use the new fraud pattern.'
+    : '<span class="tag approve">Normal traffic running</span>';
+  document.getElementById("stop").disabled = false;
+  if (!running) { running = true; sendOne(); }
+}
+
+document.getElementById("start").addEventListener("click", () => start(false));
+document.getElementById("attack").addEventListener("click", () => start(true));
+document.getElementById("stop").addEventListener("click", () => {
+  running = false;
+  document.getElementById("stop").disabled = true;
+  document.getElementById("mode").textContent = "Stopped.";
+});
 </script>
 </body>
 </html>

@@ -1,0 +1,26 @@
+{
+  "_note": "Sample data. Delete once GET /api/drift exists and MOCK.drift is false.",
+  "checked_at": "2026-11-24T16:00:00Z",
+  "threshold": 0.2,
+  "window_orders": 300,
+  "features": [
+    {"feature": "TransactionAmt", "psi": 0.34, "drift": true,
+     "reference": {"labels": ["$0-25", "$25-50", "$50-100", "$100-200", "$200+"], "shares": [0.22, 0.24, 0.27, 0.17, 0.10]},
+     "current":   {"labels": ["$0-25", "$25-50", "$50-100", "$100-200", "$200+"], "shares": [0.12, 0.15, 0.20, 0.23, 0.30]}},
+    {"feature": "P_emaildomain", "psi": 0.27, "drift": true,
+     "reference": {"labels": ["gmail.com", "yahoo.com", "hotmail.com", "other"], "shares": [0.42, 0.18, 0.08, 0.32]},
+     "current":   {"labels": ["gmail.com", "yahoo.com", "hotmail.com", "other"], "shares": [0.30, 0.12, 0.05, 0.53]}},
+    {"feature": "DeviceType", "psi": 0.12, "drift": false,
+     "reference": {"labels": ["desktop", "mobile", "unknown"], "shares": [0.14, 0.10, 0.76]},
+     "current":   {"labels": ["desktop", "mobile", "unknown"], "shares": [0.10, 0.20, 0.70]}},
+    {"feature": "C1", "psi": 0.06, "drift": false,
+     "reference": {"labels": ["1", "2", "3-5", "6+"], "shares": [0.55, 0.18, 0.15, 0.12]},
+     "current":   {"labels": ["1", "2", "3-5", "6+"], "shares": [0.52, 0.19, 0.16, 0.13]}},
+    {"feature": "ProductCD", "psi": 0.03, "drift": false,
+     "reference": {"labels": ["W", "C", "R", "H", "S"], "shares": [0.74, 0.12, 0.06, 0.06, 0.02]},
+     "current":   {"labels": ["W", "C", "R", "H", "S"], "shares": [0.72, 0.13, 0.07, 0.06, 0.02]}},
+    {"feature": "D1", "psi": 0.02, "drift": false,
+     "reference": {"labels": ["0", "1-30", "31-180", "181+"], "shares": [0.48, 0.14, 0.18, 0.20]},
+     "current":   {"labels": ["0", "1-30", "31-180", "181+"], "shares": [0.47, 0.15, 0.18, 0.20]}}
+  ]
+}
